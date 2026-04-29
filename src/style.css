@@ -109,35 +109,14 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
 }
 .field-colon { color: #484f58; }
 
-.field-input {
-  background: #0d1117;
-  border: 1px solid #21262d;
-  color: #c9d1d9;
+.field-value {
+  font-size: 12px;
   font-family: inherit;
-  font-size: 12px;
-  padding: 4px 8px;
-  border-radius: 4px;
-  width: 200px;
-  outline: none;
 }
-.field-input:focus { border-color: #388bfd; }
-.field.changed .field-input { border-color: rgba(187, 128, 9, 0.5); }
-.field-input.type-number { color: #79c0ff; }
-.field-input.type-boolean { color: #d2a8ff; }
-.field-input.type-string { color: #a5d6ff; }
-.field-input.type-null { color: #8b949e; font-style: italic; }
-
-.btn-reset, .btn-remove {
-  background: transparent;
-  border: 1px solid #30363d;
-  color: #8b949e;
-  padding: 0 7px;
-  font-size: 12px;
-  line-height: 1.4;
-  border-radius: 4px;
-}
-.btn-reset:hover { color: #c9d1d9; border-color: #6e7681; }
-.btn-remove:hover { color: #f85149; border-color: #da3633; }
+.field-value.type-number { color: #79c0ff; }
+.field-value.type-boolean { color: #d2a8ff; }
+.field-value.type-string { color: #a5d6ff; }
+.field-value.type-null { color: #8b949e; font-style: italic; }
 
 .diff-badge {
   display: inline-flex;
@@ -147,27 +126,6 @@ button:disabled { opacity: 0.4; cursor: not-allowed; }
   flex-shrink: 0;
   margin-left: auto;
 }
-
-/* Add / Move row */
-.add-row {
-  display: flex;
-  gap: 6px;
-  margin-top: 12px;
-  padding: 6px 0;
-}
-.add-row input {
-  flex: 1;
-  background: #0d1117;
-  border: 1px solid #21262d;
-  color: #c9d1d9;
-  font-family: inherit;
-  font-size: 12px;
-  padding: 5px 8px;
-  border-radius: 4px;
-  outline: none;
-}
-.add-row input:focus { border-color: #388bfd; }
-.add-row button { padding: 5px 12px; }
 
 /* Render badge */
 .render-badge {
