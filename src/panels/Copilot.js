@@ -1,0 +1,10 @@
+import { jsx as _jsx, jsxs as _jsxs, Fragment as _Fragment } from "react/jsx-runtime";
+import { useEngineState } from '@maxjay/patchwork/react';
+export function Copilot({ engine }) {
+    useEngineState(engine);
+    const session = engine.activeCopilotSession();
+    if (!session)
+        return null;
+    const proposals = session.diff();
+    return (_jsxs("section", { className: "card copilot-card", children: [_jsxs("div", { className: "card-header", children: [_jsx("h2", { children: "Copilot Session" }), _jsx("button", { onClick: () => session.end(), children: "End Session" })] }), proposals.length === 0 ? (_jsx("div", { className: "empty", children: "All proposals reviewed. End session to close." })) : (_jsxs(_Fragment, { children: [_jsx("div", { className: "proposals", children: proposals.map((p) => (_jsxs("div", { className: `proposal${p.conflictsWithUser ? ' conflict' : ''}`, children: [_jsx("span", { className: `op-kind ${p.kind}`, children: p.kind }), _jsx("span", { className: "op-path", children: p.path }), _jsxs("span", { className: "op-values", children: [p.prev !== undefined && _jsx("span", { className: "val-old", children: JSON.stringify(p.prev) }), p.prev !== undefined && p.value !== undefined && _jsx("span", { className: "arrow", children: "\u2192" }), p.value !== undefined && _jsx("span", { className: "val-new", children: JSON.stringify(p.value) })] }), p.conflictsWithUser && _jsx("span", { className: "conflict-badge", children: "conflict" }), _jsxs("div", { className: "proposal-actions", children: [_jsx("button", { className: "btn-approve", onClick: () => session.approve(p.path), children: "Approve" }), _jsx("button", { className: "btn-decline", onClick: () => session.decline(p.path), children: "Decline" })] })] }, p.path))) }), _jsxs("div", { className: "bulk-actions", children: [_jsx("button", { className: "btn-approve", onClick: () => session.approveAll(), children: "Approve All" }), _jsx("button", { className: "btn-decline", onClick: () => session.declineAll(), children: "Decline All" })] })] }))] }));
+}
