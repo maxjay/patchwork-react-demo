@@ -1,3 +1,5 @@
+import type { OpInput } from '@maxjay/patchwork';
+
 export const INITIAL_CONFIG = {
   appName: 'my-service',
   timeout: 30,
@@ -5,7 +7,6 @@ export const INITIAL_CONFIG = {
   server: {
     host: 'localhost',
     port: 8080,
-    ssl: false,
   },
   features: {
     darkMode: true,
@@ -38,3 +39,11 @@ export const SCHEMA = {
     },
   },
 };
+
+/** What "Ask AI" stages — a deterministic stand-in for an LLM tool-call loop. */
+export const COPILOT_SCRIPT: OpInput[] = [
+  { kind: 'replace', path: '/timeout',            value: 60 },
+  { kind: 'replace', path: '/server/port',        value: 443 },
+  { kind: 'add',     path: '/server/ssl',         value: true },
+  { kind: 'replace', path: '/features/analytics', value: true },
+];
