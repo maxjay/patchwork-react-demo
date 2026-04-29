@@ -1,7 +1,7 @@
 import { useState, useRef } from 'react';
 import { useEngineState, useValue, useDiff } from '@maxjay/patchwork/react';
 import { Engine } from '@maxjay/patchwork';
-import type { CopilotSession } from '@maxjay/patchwork';
+import type { CopilotSession, OpInput } from '@maxjay/patchwork';
 import type { DiffEntry } from '@maxjay/patchwork';
 import './style.css';
 
@@ -119,7 +119,7 @@ function Field({ engine, path, depth = 0 }: { engine: Engine; path: string; dept
 // ── Actions ───────────────────────────────────────────────────────────────────
 
 function ActionsSection({ engine }: { engine: Engine }) {
-  const actions: Array<{ label: string; op: Parameters<Engine['propose']>[0] }> = [
+  const actions: Array<{ label: string; op: OpInput }> = [
     { label: '/server/port → 443',          op: { kind: 'replace', path: '/server/port', value: 443 } },
     { label: '/server/host → 0.0.0.0',      op: { kind: 'replace', path: '/server/host', value: '0.0.0.0' } },
     { label: '/timeout → 60',               op: { kind: 'replace', path: '/timeout', value: 60 } },
