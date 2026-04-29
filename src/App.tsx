@@ -1,12 +1,6 @@
-import { useRef, useState, useCallback } from 'react';
-import { useEngine, useNode, useExport } from '@maxjay/patchwork/react';
-import type {
-  Engine,
-  NodeInfo,
-  CopilotSession,
-  DiffEntry,
-  OpInput,
-} from '@maxjay/patchwork';
+import { memo, useCallback, useRef, useState } from 'react';
+import { Engine, PatchworkError, type CopilotSession, type DiffEntry, type NodeInfo } from '@maxjay/patchwork';
+import { useEngineState, useExport, useNode } from '@maxjay/patchwork/react';
 import './style.css';
 
 const INITIAL_CONFIG = {
@@ -23,17 +17,14 @@ const INITIAL_CONFIG = {
   },
 };
 
-const COPILOT_SCRIPT: OpInput[] = [
-  { kind: 'replace', path: '/timeout', value: 60 },
-  { kind: 'replace', path: '/server/port', value: 443 },
-  { kind: 'add', path: '/server/ssl', value: true },
-  { kind: 'replace', path: '/features/analytics', value: true },
-];
-
-// ─── App ────────────────────────────────────────────────────────────────────
+// ─── App ─────────────────────────────────────────────────────────────
+//
+// App holds the engine but does NOT subscribe to it. Children subscribe to
+// only what they need (useNode, useExport, useEngineState) so a single field
+// edit re-renders only that field, and the per-path reactivity demo is honest.
 
 export function App() {
-  const engine = useEngine(INITIAL_CONFIG);
+  const [engine] = useState(() => new Engine(INITIAL_CONFIG));
 
   return (
     <div className="app">
@@ -47,11 +38,7 @@ export function App() {
           <section className="card">
             <div className="card-header">
               <h2>Editor</h2>
-              <div className="toolbar">
-                <button onClick={() => engine.undo()}>Undo</button>
-                <button onClick={() => engine.redo()}>Redo</button>
-                <button className="btn-accent" onClick={() => engine.apply()}>Apply</button>
-              </div>
+              <Toolbar engine={engine} />
             </div>
 
             <Node engine={engine} path="" depth={0} />
@@ -61,6 +48,7 @@ export function App() {
           </section>
           <CopilotSection engine={engine} />
         </div>
+
         <div className="side-col">
           <LiveDocument engine={engine} />
           <DiffPanel engine={engine} />
@@ -71,9 +59,21 @@ export function App() {
   );
 }
 
-// ─── Node (one component, one hook) ─────────────────────────────────────────
+// ─── Toolbar ──────────────────────────────────────────────────────────
 
-function Node({
+function Toolbar({ engine }: { engine: Engine }) {
+  return (
+    <div className="toolbar">
+      <button onClick={() => engine.undo()}>Undo</button>
+      <button onClick={() => engine.redo()}>Redo</button>
+      <button className="btn-accent" onClick={() => engine.apply()}>Apply</button>
+    </div>
+  );
+}
+
+// ─── Node (recursive, memoized for true per-path reactivity) ──────────────────────────────────
+
+const Node = memo(function Node({
   engine,
   path,
   depth,
@@ -83,8 +83,8 @@ function Node({
   depth: number;
 }) {
   const node = useNode(engine, path);
-  const renderCount = useRef(0);
-  renderCount.current++;
+  const renders = useRef(0);
+  renders.current++;
 
   if (!node) return null;
 
@@ -93,7 +93,7 @@ function Node({
       <div className="node-object">
         {node.key && (
           <div className="group-label" style={{ paddingLeft: (depth - 1) * 20 }}>
-            <span className="render-badge" title="React render count">{renderCount.current}</span>
+            <span className="render-badge" title="React render count">{renders.current}</span>
             {node.key}
           </div>
         )}
@@ -104,8 +104,8 @@ function Node({
     );
   }
 
-  return <LeafField engine={engine} node={node} depth={depth} renderCount={renderCount.current} />;
-}
+  return <LeafField engine={engine} node={node} depth={depth} renderCount={renders.current} />;
+});
 
 function LeafField({
   engine,
@@ -118,13 +118,16 @@ function LeafField({
   depth: number;
   renderCount: number;
 }) {
-  const handleCommit = useCallback(
-    (e: React.FocusEvent<HTMLInputElement> | React.KeyboardEvent<HTMLInputElement>) => {
-      const input = e.target as HTMLInputElement;
-      const raw = input.value.trim();
+  const commit = useCallback(
+    (e: React.SyntheticEvent<HTMLInputElement>) => {
+      const raw = e.currentTarget.value.trim();
+      if (raw === '') return; // empty input — no-op (use × to remove)
       const parsed = parseValue(raw);
-      if (parsed !== node.value) {
+      if (Object.is(parsed, node.value)) return;
+      try {
         engine.propose({ kind: 'replace', path: node.path, value: parsed });
+      } catch {
+        // schema-less engine — nothing should throw here, but stay safe
       }
     },
     [engine, node.path, node.value],
@@ -136,21 +139,29 @@ function LeafField({
       <span className="field-key">{node.key}</span>
       <span className="field-colon">:</span>
       <input
+        // remount on external value changes (undo, copilot approve, reset) so
+        // the uncontrolled input always reflects the engine truth.
+        key={`${node.path}:${String(node.value)}`}
         className={`field-input type-${node.type}`}
         defaultValue={String(node.value)}
-        key={`${node.path}:${String(node.value)}`}
-        onBlur={handleCommit}
-        onKeyDown={(e) => { if (e.key === 'Enter') handleCommit(e); }}
+        onBlur={commit}
+        onKeyDown={(e) => {
+          if (e.key === 'Enter') (e.target as HTMLInputElement).blur();
+          if (e.key === 'Escape') {
+            (e.target as HTMLInputElement).value = String(node.value);
+            (e.target as HTMLInputElement).blur();
+          }
+        }}
       />
       {node.changed && (
-        <button className="btn-reset" onClick={() => engine.reset(node.path)} title="Reset to base">
+        <button className="btn-icon" title="engine.reset(path)" onClick={() => engine.reset(node.path)}>
           &#8617;
         </button>
       )}
       <button
-        className="btn-remove"
+        className="btn-icon btn-remove"
+        title="engine.propose(remove)"
         onClick={() => engine.propose({ kind: 'remove', path: node.path })}
-        title="Remove field"
       >
         &times;
       </button>
@@ -165,11 +176,12 @@ function LeafField({
   );
 }
 
-// ─── Add Field ──────────────────────────────────────────────────────────────
+// ─── AddField ──────────────────────────────────────────────────────────
 
 function AddField({ engine }: { engine: Engine }) {
   const [path, setPath] = useState('');
   const [value, setValue] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   const submit = () => {
     if (!path) return;
@@ -178,35 +190,40 @@ function AddField({ engine }: { engine: Engine }) {
       engine.propose({ kind: 'add', path: resolved, value: parseValue(value) });
       setPath('');
       setValue('');
-    } catch {
-      // invalid path or schema rejection
+      setError(null);
+    } catch (err) {
+      setError(err instanceof PatchworkError ? err.message : 'failed to add');
     }
   };
 
   return (
-    <div className="add-row">
-      <input
-        placeholder="path (e.g. /server/maxConn)"
-        value={path}
-        onChange={(e) => setPath(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
-      />
-      <input
-        placeholder="value"
-        value={value}
-        onChange={(e) => setValue(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
-      />
-      <button onClick={submit}>+ Add</button>
+    <div className="add-row-wrap">
+      <div className="add-row">
+        <input
+          placeholder="path (e.g. /server/maxConn)"
+          value={path}
+          onChange={(e) => setPath(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+        />
+        <input
+          placeholder="value"
+          value={value}
+          onChange={(e) => setValue(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+        />
+        <button onClick={submit}>+ Add</button>
+      </div>
+      {error && <div className="row-error">{error}</div>}
     </div>
   );
 }
 
-// ─── Move / Rename Field ────────────────────────────────────────────────────
+// ─── MoveField ─────────────────────────────────────────────────────────────
 
 function MoveField({ engine }: { engine: Engine }) {
   const [from, setFrom] = useState('');
   const [to, setTo] = useState('');
+  const [error, setError] = useState<string | null>(null);
 
   const submit = () => {
     if (!from || !to) return;
@@ -214,32 +231,33 @@ function MoveField({ engine }: { engine: Engine }) {
       engine.move(from, to);
       setFrom('');
       setTo('');
-    } catch {
-      // path not found
+      setError(null);
+    } catch (err) {
+      setError(err instanceof PatchworkError ? err.message : 'failed to move');
     }
   };
 
   return (
-    <div className="add-row">
-      <input
-        placeholder="from (e.g. /retries)"
-        value={from}
-        onChange={(e) => setFrom(e.target.value)}
-      />
-      <input
-        placeholder="to (e.g. /maxRetries)"
-        value={to}
-        onChange={(e) => setTo(e.target.value)}
-        onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
-      />
-      <button onClick={submit}>Move</button>
+    <div className="add-row-wrap">
+      <div className="add-row">
+        <input placeholder="from (e.g. /retries)" value={from} onChange={(e) => setFrom(e.target.value)} />
+        <input
+          placeholder="to (e.g. /maxRetries)"
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          onKeyDown={(e) => { if (e.key === 'Enter') submit(); }}
+        />
+        <button onClick={submit}>Move</button>
+      </div>
+      {error && <div className="row-error">{error}</div>}
     </div>
   );
 }
 
-// ─── Copilot Section ────────────────────────────────────────────────────────
+// ─── Copilot ────────────────────────────────────────────────────────────
 
 function CopilotSection({ engine }: { engine: Engine }) {
+  useEngineState(engine);
   const session = engine.activeCopilotSession();
 
   return (
@@ -255,10 +273,10 @@ function CopilotSection({ engine }: { engine: Engine }) {
 
       {!session ? (
         <div className="empty">
-          No active copilot session. Click "Simulate Copilot" to see the approve/decline workflow.
+          No active copilot session. Click “Simulate Copilot” to see the approve/decline workflow.
         </div>
       ) : (
-        <CopilotProposals engine={engine} session={session} />
+        <CopilotProposals session={session} />
       )}
     </section>
   );
@@ -266,15 +284,17 @@ function CopilotSection({ engine }: { engine: Engine }) {
 
 function simulateCopilot(engine: Engine) {
   const session = engine.startCopilot();
-  session.propose(COPILOT_SCRIPT);
+  session.propose([
+    { kind: 'replace', path: '/timeout', value: 60 },
+    { kind: 'replace', path: '/server/port', value: 443 },
+    { kind: 'add',     path: '/server/ssl', value: true },
+    { kind: 'replace', path: '/features/analytics', value: true },
+  ]);
 }
 
-function CopilotProposals({ engine: _engine, session }: { engine: Engine; session: CopilotSession }) {
+function CopilotProposals({ session }: { session: CopilotSession }) {
   const proposals = session.diff();
-
-  if (proposals.length === 0) {
-    return <div className="empty">All proposals reviewed.</div>;
-  }
+  if (proposals.length === 0) return <div className="empty">All proposals reviewed.</div>;
 
   return (
     <div>
@@ -305,11 +325,10 @@ function CopilotProposals({ engine: _engine, session }: { engine: Engine; sessio
   );
 }
 
-// ─── Live Document ──────────────────────────────────────────────────────────
+// ─── LiveDocument ─────────────────────────────────────────────────────────
 
 function LiveDocument({ engine }: { engine: Engine }) {
   const doc = useExport(engine);
-
   return (
     <section className="card">
       <h2>Live Document</h2>
@@ -319,9 +338,10 @@ function LiveDocument({ engine }: { engine: Engine }) {
   );
 }
 
-// ─── Diff Panel ─────────────────────────────────────────────────────────────
+// ─── DiffPanel ─────────────────────────────────────────────────────────────
 
 function DiffPanel({ engine }: { engine: Engine }) {
+  useEngineState(engine);
   const ops = engine.diff();
 
   return (
@@ -346,7 +366,7 @@ function DiffPanel({ engine }: { engine: Engine }) {
   );
 }
 
-// ─── Render Tracker ─────────────────────────────────────────────────────────
+// ─── RenderTracker (static explainer) ────────────────────────────────────────────────
 
 function RenderTracker() {
   return (
@@ -354,7 +374,7 @@ function RenderTracker() {
       <h2>Per-Path Reactivity</h2>
       <div className="empty" style={{ lineHeight: 1.6 }}>
         Each node shows a <span className="render-badge inline">n</span> badge counting
-        its React renders. Edit a single field and watch — only that field's
+        its React renders. Edit a single field and watch &mdash; only that field’s
         counter increments. Object nodes only re-render when keys are
         added or removed. All powered by one hook: <code>useNode</code>.
       </div>
@@ -362,13 +382,13 @@ function RenderTracker() {
   );
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────────
+// ─── Helpers ────────────────────────────────────────────────────────────
 
 function parseValue(raw: string): unknown {
   if (raw === 'true') return true;
   if (raw === 'false') return false;
   if (raw === 'null') return null;
   const num = Number(raw);
-  if (!isNaN(num) && raw !== '') return num;
+  if (!Number.isNaN(num) && raw !== '') return num;
   return raw;
 }
